@@ -9,7 +9,7 @@ import {
 } from "./shared.js";
 import type { Filter } from "../client/raynet.js";
 
-const DEAL_STATE = ["IN_PROGRESS", "WON", "LOST"] as const;
+const DEAL_STATUS = ["B_ACTIVE", "E_WIN", "F_LOST", "G_STORNO"] as const;
 
 const DealItemSchema = z.object({
   product: z.number().int().positive().optional(),
@@ -58,7 +58,8 @@ export const searchDeals = defineTool({
   name: "search_deals",
   description:
     "Search RAYNET deals (business cases). Filter by company, person, owner, " +
-    "phase, state, or value range. Returns short matches; call get_deal for full detail.",
+    "phase, status, or value range. Status enum: B_ACTIVE (open), E_WIN, F_LOST, " +
+    "G_STORNO. Returns short matches; call get_deal for full detail.",
   category: "read",
   scopes: ["crm.read"],
   inputSchema: z.object({
@@ -67,7 +68,7 @@ export const searchDeals = defineTool({
     personId: z.number().int().positive().optional(),
     ownerUserId: z.number().int().positive().optional(),
     phaseId: z.number().int().positive().optional(),
-    state: z.enum(DEAL_STATE).optional(),
+    status: z.enum(DEAL_STATUS).optional(),
     minTotalAmount: z.number().optional(),
     maxTotalAmount: z.number().optional(),
     limit: z.number().int().min(1).max(50).default(10),
@@ -83,7 +84,7 @@ export const searchDeals = defineTool({
       filters.push({ attr: "owner", value: input.ownerUserId });
     if (input.phaseId !== undefined)
       filters.push({ attr: "businessCasePhase", value: input.phaseId });
-    if (input.state) filters.push({ attr: "state", value: input.state });
+    if (input.status) filters.push({ attr: "status", value: input.status });
     if (input.minTotalAmount !== undefined)
       filters.push({ attr: "totalAmount", op: "GE", value: input.minTotalAmount });
     if (input.maxTotalAmount !== undefined)
@@ -145,7 +146,7 @@ export const getDeal = defineTool({
         client.list<Record<string, unknown>>("/activity/", {
           filters: [{ attr: "businessCase", value: input.businessCaseId }],
           limit: input.activitiesLimit,
-          sortColumn: "since",
+          sortColumn: "scheduledFrom",
           sortDirection: "DESC",
         }),
     });
@@ -259,27 +260,25 @@ export const changeDealPhase = defineTool({
   name: "change_deal_phase",
   description:
     "Move a deal to a new phase. This is a thin wrapper around update_deal that " +
-    "submits only the phase change so the transition is easy to audit. To close " +
-    "a deal as WON or LOST, also pass state.",
+    "submits only the phase change so the transition is easy to audit. Closing a " +
+    "deal as won/lost is done by transitioning to the corresponding terminal phase " +
+    "configured in RAYNET (the deal's status is derived from its phase).",
   category: "write",
   scopes: ["crm.deals.write"],
   inputSchema: z.object({
     businessCaseId: z.number().int().positive(),
     phaseId: z.number().int().positive(),
-    state: z.enum(DEAL_STATE).optional(),
     note: z.string().max(2000).optional(),
   }),
   async handler(input, { client }) {
     const body = clean({
       businessCasePhase: { id: input.phaseId },
-      state: input.state,
       description: input.note,
     });
     await client.update(`/businessCase/${input.businessCaseId}/`, body);
     return {
       id: input.businessCaseId,
       phaseId: input.phaseId,
-      state: input.state ?? null,
       ok: true,
     };
   },

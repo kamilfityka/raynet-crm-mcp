@@ -12,9 +12,19 @@ import {
 } from "./shared.js";
 import type { Filter } from "../client/raynet.js";
 
-const COMPANY_STATE = ["ACTIVE", "INACTIVE", "SUSPECT", "PROSPECT"] as const;
-const COMPANY_RATING = ["A", "B", "C", "D"] as const;
-const COMPANY_ROLE = ["CUSTOMER", "PARTNER", "COMPETITOR", "OTHER"] as const;
+const COMPANY_STATE = [
+  "A_POTENTIAL",
+  "B_ACTUAL",
+  "C_DEFERRED",
+  "D_UNATTRACTIVE",
+] as const;
+const COMPANY_RATING = ["A", "B", "C"] as const;
+const COMPANY_ROLE = [
+  "A_SUBSCRIBER",
+  "B_PARTNER",
+  "C_SUPPLIER",
+  "D_RIVAL",
+] as const;
 
 const AddressSchema = z.object({
   type: z.string().optional(),
@@ -28,9 +38,9 @@ const AddressSchema = z.object({
 
 const CompanyWriteCommon = {
   name: z.string().min(1).max(255),
-  rating: z.enum(COMPANY_RATING).optional(),
-  state: z.enum(COMPANY_STATE).optional(),
-  role: z.enum(COMPANY_ROLE).optional(),
+  rating: z.enum(COMPANY_RATING),
+  state: z.enum(COMPANY_STATE),
+  role: z.enum(COMPANY_ROLE),
   notice: z.string().max(4000).optional(),
   regNumber: z.string().max(64).optional(),
   taxNumber: z.string().max(64).optional(),
@@ -80,7 +90,8 @@ export const searchCompanies = defineTool({
     if (input.rating) filters.push({ attr: "rating", value: input.rating });
     if (input.role) filters.push({ attr: "role", value: input.role });
     if (input.state) filters.push({ attr: "state", value: input.state });
-    else if (input.onlyValid) filters.push({ attr: "state", value: "ACTIVE" });
+    else if (input.onlyValid)
+      filters.push({ attr: "state", value: "B_ACTUAL" });
 
     const res = await client.list<Record<string, unknown>>("/company/", {
       ...(input.query !== undefined && { fulltext: input.query }),
@@ -131,7 +142,10 @@ export const getCompany = defineTool({
       contacts: () =>
         client.list<Record<string, unknown>>("/person/", {
           filters: [
-            { attr: "primaryRelationship.company", value: input.companyId },
+            {
+              attr: "primaryRelationship-company-id",
+              value: input.companyId,
+            },
           ],
           limit: 10,
           sortColumn: "lastName",
@@ -141,21 +155,23 @@ export const getCompany = defineTool({
         client.list<Record<string, unknown>>("/businessCase/", {
           filters: [
             { attr: "company", value: input.companyId },
-            { attr: "state", op: "EQ", value: "IN_PROGRESS" },
+            { attr: "status", op: "EQ", value: "B_ACTIVE" },
           ],
           limit: 10,
         }),
       recentActivities: () =>
         client.list<Record<string, unknown>>("/activity/", {
-          filters: [{ attr: "company", value: input.companyId }],
+          filters: [
+            { attr: "companyContextFilter", value: input.companyId },
+          ],
           limit: input.activitiesLimit,
-          sortColumn: "since",
+          sortColumn: "scheduledFrom",
           sortDirection: "DESC",
         }),
       upcomingTasks: () =>
         client.list<Record<string, unknown>>("/task/", {
           filters: [
-            { attr: "company", value: input.companyId },
+            { attr: "companyContextFilter", value: input.companyId },
             { attr: "completed", op: "EQ", value: "false" },
           ],
           limit: input.tasksLimit,

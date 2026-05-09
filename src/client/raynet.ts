@@ -119,6 +119,22 @@ export class RaynetClient {
     return json as T;
   }
 
+  /** RAYNET convention: PUT a collection root creates a new resource. */
+  async create<T = { id: number }>(path: string, body: unknown): Promise<T> {
+    const json = await this.fetchJson("PUT", this.buildUrl(path), body);
+    return unwrapData<T>(json);
+  }
+
+  /** RAYNET convention: POST to a resource updates it. */
+  async update<T = { id: number }>(path: string, body: unknown): Promise<T> {
+    const json = await this.fetchJson("POST", this.buildUrl(path), body);
+    return unwrapData<T>(json);
+  }
+
+  async remove(path: string): Promise<void> {
+    await this.fetchJson("DELETE", this.buildUrl(path));
+  }
+
   /**
    * Execute several read-only requests in parallel while respecting the
    * per-tenant concurrency cap. Failures of any sub-request surface as the
@@ -172,18 +188,29 @@ export class RaynetClient {
     return url.toString();
   }
 
-  private async fetchJson(method: string, url: string): Promise<unknown> {
+  private async fetchJson(
+    method: string,
+    url: string,
+    body?: unknown,
+  ): Promise<unknown> {
     return withConcurrencyLimit(this.tenant.id, async () => {
       const started = Date.now();
+      const headers: Record<string, string> = {
+        authorization: this.authHeader,
+        "x-instance-name": this.tenant.instanceName,
+        accept: "application/json",
+        "user-agent": "raynet-crm-mcp/0.1",
+      };
+      let payload: string | undefined;
+      if (body !== undefined) {
+        payload = JSON.stringify(body);
+        headers["content-type"] = "application/json";
+      }
       const res = await request(url, {
         method: method as "GET" | "POST" | "PUT" | "DELETE",
         dispatcher: agent,
-        headers: {
-          authorization: this.authHeader,
-          "x-instance-name": this.tenant.instanceName,
-          accept: "application/json",
-          "user-agent": "raynet-crm-mcp/0.1",
-        },
+        headers,
+        ...(payload !== undefined && { body: payload }),
         bodyTimeout: DEFAULT_TIMEOUT_MS,
         headersTimeout: DEFAULT_TIMEOUT_MS,
       }).catch((err: Error) => {
@@ -245,6 +272,13 @@ export class RaynetClient {
 
 function ensureLeading(p: string): string {
   return p.startsWith("/") ? p : "/" + p;
+}
+
+function unwrapData<T>(json: unknown): T {
+  if (json && typeof json === "object" && "data" in json) {
+    return (json as { data: T }).data;
+  }
+  return json as T;
 }
 
 function headerNumber(v: string | string[] | undefined): number | undefined {

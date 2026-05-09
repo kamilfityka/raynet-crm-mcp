@@ -23,10 +23,13 @@ export function buildMcpServer(tenant: Tenant, logger: Logger): McpServer {
   const server = new McpServer(SERVER_INFO, {
     capabilities: { tools: {} },
     instructions:
-      "RAYNET CRM connector. Use search_* tools first to locate records, then " +
-      "get_*_context tools for full details. All tools are read-only in this " +
-      "release. Data may include personal information — only fetch what you " +
-      "need to answer the user's question.",
+      "RAYNET CRM connector. Covers Contact database (companies + contacts), " +
+      "Business (deals), and Activities (task/meeting/call/email/letter/event). " +
+      "Use search_* tools first to locate records, then get_* with mode=full " +
+      "for consolidated context. Reference fields take RAYNET ids — fetch them " +
+      "via search_* before passing to create_*/update_* tools. delete_* tools " +
+      "require confirm=true and the crm.destructive scope. Data may include " +
+      "personal information — only fetch what you need to answer the question.",
   });
 
   const client = new RaynetClient(tenant, logger);
@@ -42,7 +45,7 @@ export function buildMcpServer(tenant: Tenant, logger: Logger): McpServer {
       category: string;
       handler: (input: unknown, ctx: { client: RaynetClient; logger: Logger }) => Promise<unknown>;
     };
-    const shape = (t.inputSchema as unknown as z.AnyZodObject).shape;
+    const shape = unwrapShape(t.inputSchema);
     server.registerTool(
       t.name,
       { description: t.description, inputSchema: shape },
@@ -95,6 +98,23 @@ export function buildMcpServer(tenant: Tenant, logger: Logger): McpServer {
   }
 
   return server;
+}
+
+/**
+ * Tools may wrap their input schema in `.refine()` for cross-field constraints,
+ * which produces a `ZodEffects` rather than a `ZodObject`. The MCP SDK expects
+ * the bare `.shape` to expose individual parameters, so unwrap effects until we
+ * reach the underlying object.
+ */
+function unwrapShape(schema: z.ZodTypeAny): z.ZodRawShape {
+  let s: z.ZodTypeAny = schema;
+  // ZodEffects wraps the inner schema under _def.schema
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  while ((s as any)?._def?.typeName === "ZodEffects") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    s = (s as any)._def.schema as z.ZodTypeAny;
+  }
+  return (s as unknown as z.AnyZodObject).shape;
 }
 
 function errorResult(e: ToolError) {

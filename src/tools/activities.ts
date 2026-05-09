@@ -93,26 +93,32 @@ export const listActivities = defineTool({
   }),
   async handler(input, { client }) {
     const filters: Filter[] = [];
-    if (input.type) filters.push({ attr: "category", value: input.type });
     if (input.companyId !== undefined)
-      filters.push({ attr: "company", value: input.companyId });
+      filters.push({
+        attr: "companyContextFilter",
+        value: input.companyId,
+      });
     if (input.personId !== undefined)
-      filters.push({ attr: "person", value: input.personId });
+      filters.push({ attr: "personFilter", value: input.personId });
     if (input.businessCaseId !== undefined)
       filters.push({ attr: "businessCase", value: input.businessCaseId });
     if (input.ownerUserId !== undefined)
-      filters.push({ attr: "owner", value: input.ownerUserId });
+      filters.push({ attr: "owner-id", value: input.ownerUserId });
     if (input.completed !== undefined)
       filters.push({ attr: "completed", value: String(input.completed) });
     if (input.fromDate)
-      filters.push({ attr: "since", op: "GE", value: input.fromDate });
-    if (input.toDate) filters.push({ attr: "since", op: "LE", value: input.toDate });
+      filters.push({ attr: "scheduledFrom", op: "GE", value: input.fromDate });
+    if (input.toDate)
+      filters.push({ attr: "scheduledFrom", op: "LE", value: input.toDate });
 
-    const res = await client.list<Record<string, unknown>>("/activity/", {
+    // Filtering /activity/ by activity type isn't supported via a query param;
+    // dispatch to the per-type collection instead.
+    const path = input.type ? activityListPath(input.type) : "/activity/";
+    const res = await client.list<Record<string, unknown>>(path, {
       filters,
       limit: input.limit,
       offset: input.offset,
-      sortColumn: "since",
+      sortColumn: "scheduledFrom",
       sortDirection: "DESC",
     });
     return {
@@ -172,7 +178,7 @@ export const listUpcomingTasks = defineTool({
       { attr: "deadline", op: "LE", value: fmt(until) },
     ];
     if (input.ownerUserId !== undefined)
-      filters.push({ attr: "owner", value: input.ownerUserId });
+      filters.push({ attr: "owner-id", value: input.ownerUserId });
 
     const res = await client.list<Record<string, unknown>>("/task/", {
       filters,

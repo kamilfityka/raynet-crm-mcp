@@ -79,7 +79,10 @@ export const searchContacts = defineTool({
   async handler(input, { client }) {
     const filters: Filter[] = [];
     if (input.companyId !== undefined)
-      filters.push({ attr: "primaryRelationship.company", value: input.companyId });
+      filters.push({
+        attr: "primaryRelationship-company-id",
+        value: input.companyId,
+      });
     if (input.ownerUserId !== undefined)
       filters.push({ attr: "owner", value: input.ownerUserId });
 
@@ -133,21 +136,21 @@ export const getContact = defineTool({
         client.list<Record<string, unknown>>("/businessCase/", {
           filters: [
             { attr: "person", value: input.personId },
-            { attr: "state", value: "IN_PROGRESS" },
+            { attr: "status", value: "B_ACTIVE" },
           ],
           limit: 10,
         }),
       recentActivities: () =>
         client.list<Record<string, unknown>>("/activity/", {
-          filters: [{ attr: "person", value: input.personId }],
+          filters: [{ attr: "personFilter", value: input.personId }],
           limit: input.activitiesLimit,
-          sortColumn: "since",
+          sortColumn: "scheduledFrom",
           sortDirection: "DESC",
         }),
       upcomingTasks: () =>
         client.list<Record<string, unknown>>("/task/", {
           filters: [
-            { attr: "person", value: input.personId },
+            { attr: "personFilter", value: input.personId },
             { attr: "completed", value: "false" },
           ],
           limit: input.tasksLimit,
